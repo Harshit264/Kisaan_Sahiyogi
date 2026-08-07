@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kisaan Sahiyogi</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" defer integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>    
+    <script src="script.js" defer></script>
+    <nav class="navbar sticky-top bg-body-tertiary">
+        <div class="container-fluid">
+            <ul class="navbar-nav flex-row mx-auto gap-2 justify-around align-items-center">
+                <li class="nav-item">
+                    <button class="btn btn-md btn-outline-success text-white fs-7 px-1" id="setEnglish">English</button>
+                </li>
+                <li class="nav-item">
+                    <button class="btn btn-md btn-outline-success text-white fs-7 px-1" id="setHindi">हिन्दी</button>
+                </li>
+                <li class="nav-item">
+                    <button class="btn btn-md btn-outline-success text-white fs-7 px-1" id="setTamil">தமிழ்</button>
+                </li>
+                <li class="nav-item">
+                    <button class="btn btn-md btn-outline-success text-white fs-7 px-1" id="setTelugu">తెలుగు</button>
+                </li>
+                <li class="nav-item">
+                    <button class="btn btn-md btn-outline-success text-white fs-7 px-1" id="setBengali">বাংলা</button>
+                </li>
+
+                <li class="nav-item">
+                    <button class="btn btn-md btn-outline-success text-white fs-7 px-1" id="setMarathi">मराठी</button>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    <div class="startingScreen" id="startingScreen">
+        <div style="font-size: clamp(2rem, 1.27rem + 3.64vw, 3.5rem); margin: 0.5em; border: 0.5em; text-align: center; font-weight: bold;" class="title">Kisaan Sahiyogi</div>
+        <div class="startingTextContainer">
+            <p class="pi1">Welcome to Kisaan Sahiyogi. A wesbite specifically made to cater to the needs of the farmers of India. The goal of this website is to prevent misuse of any chemical or industrial products used by farmers in everyday life, often leading to catastrophic amounts of financial and health loss due to a lack of awareness or simply because there is no information available out in the open in simple terms for farmers to read and understand the practical implications of the products used.</p>
+            <p class="pi2">Just click on the button below and take a photo of the chemical you want information about.</p>
+        </div>
+        <p style="font-size: 1.2em;">👉 <button id="imgBtn" class="btn btn-success">Click me to take photo</button> 👈</p>
+        <input type="file" accept="image/*" capture="environment" id="input" hidden>
+    </div>
+    <div id="pageCover" class="pageCover">
+        <div id="loaderContainer">
+            <div class="spinner-border text-success" role="status" style="width: 4rem; height: 4rem; font-size: 2em;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+        <h4 id="tips" class="tips"></h4>  
+        <p style="font-weight: bold;">ETA: 20sec....</p>
+    </div>
+    <div style="width: 100%; display: flex; justify-content: center; align-items: center;">
+        <div id="farmerInfo" class="farmerInfo">
+            <div class="container">
+                <div class="FI">
+                    <h1 style="font-size: clamp(2rem, 1.27rem + 3.64vw, 3.5rem); margin: 0.5em; border: 0.5em; text-align: center; text-decoration: underline;" class="summary">Summary:</h1>
+                    <div class="row mb-3">
+                        <span class="farmerHead" id="brand">Brand:</span>
+                        <span class="farmerPara" id="farmerParaBrand"></span>
+                    </div>
+                    <div class="row mb-3">
+                        <span class="farmerHead" id="type">Product Type:</span>
+                        <span class="farmerPara" id="farmerParaType"></span>
+                    </div>
+                    <div class="row mb-3">
+                        <span class="farmerHead" id="use">Use:</span>
+                        <span class="farmerPara" id="farmerParaUse"></span>
+                    </div>
+                    <div class="row mb-3">
+                        <span class="farmerHead" id="prec">Precautions:</span>
+                        <span class="farmerPara" id="farmerParaPrecautionsMask" class="mask">(😷)Mask Needed: </span>
+                        <span class="farmerPara" id="farmerParaPrecautionsEye" class="eye">(🥽)Eye Protection Needed: </span>
+                        <span class="farmerPara" id="farmerParaPrecautionsPPE" class="ppe">(🥽🧤🥾)PPE Needed: </span>
+                    </div>
+                    <div class="row mb-3">
+                        <span class="farmerHead" id="techInfo">Technical Information:</span>
+                        <span class="farmerPara" id="farmerParaTechInfo"></span>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-success" id="reInitBtn" type="button" style="font-size: 1.2em;" onclick="reInit()">Go Back</button>                   
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="tts-controls">
+        <button id="btn-play" class="btn btn-secondary btn-md text-black">▶ Play</button>
+        <button id="btn-stop" class="btn btn-secondary btn-md text-black" disabled>⏹ Stop</button>
+    </div>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script> -->
+</body>
+</html>
