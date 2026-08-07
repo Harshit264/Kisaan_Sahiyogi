@@ -44,7 +44,7 @@ const schema = {
 } 
 
 //We are setting a custom proxy api call whcih the browser can access while ensuring the security to be maintained
-app.post("/api/describe", async (req, res) => { //This makes a post request to the google sdk
+app.post("https://kisaan-sahiyogi.onrender.com/api/describe", async (req, res) => { //This makes a post request to the google sdk
     const { mimeType, base64Data, langName} = req.body
     if (!mimeType || !base64Data){
         return res.status(400).json({error: "Missing image data or image type is invalid"})

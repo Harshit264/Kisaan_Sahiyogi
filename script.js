@@ -414,7 +414,7 @@ const reInit = () => {
 //Main functions
 
 async function dataLink(mimeType, base64Data, langName) {
-    const response = await fetch("https://kisaan-sahiyogi.onrender.com/api/describe'", { // does a post request to the backend which we set in the server.js and waits for a response
+    const response = await fetch("https://kisaan-sahiyogi.onrender.com/api/describe", { // does a post request to the backend which we set in the server.js and waits for a response
         method: "POST",
         headers: {
             "Content-Type": "application/json"
