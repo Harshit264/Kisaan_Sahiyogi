@@ -61,3 +61,11 @@ html, body {
     left: 1rem;
     bottom: 1rem;
 }
+
+.credit{
+    margin: 0.5rem;
+    padding: 0.5rem;
+    font-size: 18px;
+    font-weight: bold;
+    text-decoration: underline;
+}
