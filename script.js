@@ -477,9 +477,10 @@ let queue = []
 let queueIndex = 0
 let keepAliveTimer = null
 let voices = []
-let activeUtterances = [] // Keep references to prevent Garbage Collection
+let activeUtterances = [] 
+let isProcessing = false // Prevents recursive loop lockups
 
-// Map your regional language names to standard BCP-47 codes
+// Map regional language names to standard BCP-47 codes
 const langMap = {
   'english': 'en-US',
   'hindi': 'hi-IN',
@@ -489,9 +490,12 @@ const langMap = {
   'marathi': 'mr-IN'
 }
 
-// Pre-load system voices immediately
+// Pre-load system voices safely
 const loadVoices = () => {
-  voices = synth.getVoices()
+  try {
+    voices = synth.getVoices()
+  } catch (e) {      console.error('Error loading voices:', e)
+  }
 }
 loadVoices()
 if (speechSynthesis.onvoiceschanged !== undefined) {
@@ -507,32 +511,31 @@ const resolveLangCode = (langName) => {
 
 // Finds matching regional voice engine
 const getMatchingVoice = (langCode) => {
-  if (!voices.length) voices = synth.getVoices()
-  if (!voices.length) return null
+  if (!voices || !voices.length) voices = synth.getVoices()
+  if (!voices || !voices.length) return null
 
   const target = langCode.toLowerCase()
   const primary = target.split('-')[0]
 
-  let voice = voices.find(v => v.lang.toLowerCase().replace('_', '-') === target)
+  let voice = voices.find(v => v.lang && v.lang.toLowerCase().replace('_', '-') === target)
   
   if (!voice) {
-    voice = voices.find(v => v.lang.toLowerCase().startsWith(primary))
+    voice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith(primary))
   }
 
   if (!voice && target.endsWith('-in')) {
-    voice = voices.find(v => v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().startsWith('hi-in'))
+    voice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().startsWith('hi-in'))
   }
 
   return voice || null
 }
 
-// Helper to toggle button disabled states
 const updateButtonStates = (isPlaying) => {
   if (typeof playBtn !== 'undefined' && playBtn) playBtn.disabled = isPlaying
   if (typeof stopBtn !== 'undefined' && stopBtn) stopBtn.disabled = !isPlaying
 }
 
-// Keep-alive timer for Chrome's 15-second timeout bug
+// Keep-alive timer for Chrome 15s bug
 const startKeepAlive = () => {
   stopKeepAlive()
   keepAliveTimer = setInterval(() => {
@@ -540,7 +543,7 @@ const startKeepAlive = () => {
       synth.pause()
       synth.resume()
     }
-  }, 8000) // Call every 8 seconds to stay safely under the 15s limit
+  }, 8000)
 }
 
 const stopKeepAlive = () => {
@@ -550,35 +553,37 @@ const stopKeepAlive = () => {
   }
 }
 
-// Helper to split text into small sentences/chunks (crucial for staying < 15 seconds per utterance)
+// Robust, non-freezing text chunker
 const chunkText = (text) => {
-  if (!text) return []
-  // Split on sentence-ending punctuation (period, exclamation, question mark, newline, danda)
-  const sentences = text.match(/[^.!?\n\u0964]+[.!?\n\u0964]?/g) || [text]
+  if (!text || typeof text !== 'string') return []
   
+  // Safe sentence splitting
+  const rawSentences = text.split(/(?<=[.!?\n\u0964])\s+/)
   const chunks = []
-  for (let sentence of sentences) {
-    let cleanStr = sentence.trim()
+
+  for (let i = 0; i < rawSentences.length; i++) {
+    let cleanStr = rawSentences[i].trim()
+    if (!cleanStr) continue
+
+    // Break down long paragraphs safely without while-loop crashes
+    while (cleanStr.length > 150) {
+      let splitIndex = cleanStr.lastIndexOf(' ', 150)
+      if (splitIndex === -1 || splitIndex < 30) splitIndex = 150
+
+      chunks.push(cleanStr.substring(0, splitIndex).trim())
+      cleanStr = cleanStr.substring(splitIndex).trim()
+    }
+
     if (cleanStr.length > 0) {
-      // If a single sentence is abnormally long (> 150 chars), split by commas or spaces
-      while (cleanStr.length > 150) {
-        let splitIndex = cleanStr.lastIndexOf(',', 150)
-        if (splitIndex === -1) splitIndex = cleanStr.lastIndexOf(' ', 150)
-        if (splitIndex === -1) splitIndex = 150
-        
-        chunks.push(cleanStr.substring(0, splitIndex).trim())
-        cleanStr = cleanStr.substring(splitIndex).trim()
-      }
-      if (cleanStr.length > 0) {
-        chunks.push(cleanStr)
-      }
+      chunks.push(cleanStr)
     }
   }
+
   return chunks
 }
 
-// Checks if element is currently inside browser window
 const isElementInViewport = (el) => {
+  if (!el || !(el instanceof HTMLElement)) return false
   const rect = el.getBoundingClientRect()
   const windowHeight = window.innerHeight || document.documentElement.clientHeight
   const windowWidth = window.innerWidth || document.documentElement.clientWidth
@@ -589,7 +594,6 @@ const isElementInViewport = (el) => {
   return isVisibleInDOM && isInView
 }
 
-// Reads array of elements with regional language support
 const speakTags = (tags, inputLang = 'english') => {
   stopTTS()
 
@@ -608,12 +612,12 @@ const speakTags = (tags, inputLang = 'english') => {
 
   const targetLangCode = resolveLangCode(inputLang)
 
-  // Build queue with chunked text
   queue = []
   elements
     .filter(el => el && isElementInViewport(el))
     .forEach(el => {
-      const textChunks = chunkText(el.innerText)
+      const text = el.innerText || el.textContent || ''
+      const textChunks = chunkText(text)
       textChunks.forEach(chunk => {
         queue.push({
           text: chunk,
@@ -629,24 +633,26 @@ const speakTags = (tags, inputLang = 'english') => {
   speakNextChunk()
 }
 
-// Direct, fast chunk speaker
+// Asynchronous queue processor to keep UI thread smooth
 const speakNextChunk = () => {
+  if (isProcessing) return
+  isProcessing = true
+
   if (queueIndex >= queue.length) {
-    stopTTS()
+    cleanUpState()
+    isProcessing = false
     return
   }
 
   const currentItem = queue[queueIndex]
   currentUtterance = new SpeechSynthesisUtterance(currentItem.text)
-
   currentUtterance.lang = currentItem.lang
-  
+
   const matchingVoice = getMatchingVoice(currentItem.lang)
   if (matchingVoice) {
     currentUtterance.voice = matchingVoice
   }
 
-  // Retain instance to prevent Chrome Garbage Collection mid-speech
   activeUtterances.push(currentUtterance)
 
   currentUtterance.onstart = () => {
@@ -654,35 +660,52 @@ const speakNextChunk = () => {
   }
 
   currentUtterance.onend = () => {
-    // Remove completed utterance from memory pool
     activeUtterances = activeUtterances.filter(u => u !== currentUtterance)
     queueIndex++
-    if (queueIndex < queue.length) {
+    isProcessing = false
+    
+    // Yield to the event loop before speaking the next chunk
+    setTimeout(() => {
       speakNextChunk()
-    } else {
-      stopTTS()
-    }
+    }, 10)
   }
 
   currentUtterance.onerror = (e) => {
     console.error('Speech synthesis error:', e)
-    stopTTS()
+    cleanUpState()
+    isProcessing = false
   }
 
-  synth.speak(currentUtterance)
+  try {
+    synth.speak(currentUtterance)
+  } catch (e) {
+    console.error('synth.speak failure:', e)
+    cleanUpState()
+    isProcessing = false
+  }
+}
+
+// Safe cleanup function without recursive events
+const cleanUpState = () => {
+  stopKeepAlive()
+  queue = []
+  queueIndex = 0
+  currentUtterance = null
+  activeUtterances = []
+  updateButtonStates(false)
 }
 
 const stopTTS = () => {
   stopKeepAlive()
-  synth.cancel()
-  queue = []
-  queueIndex = 0
-  currentUtterance = null
-  activeUtterances = [] // Clear memory references
-  updateButtonStates(false)
+  try {
+    synth.cancel() // Flushes queue
+  } catch (e) {
+    console.error('Error cancelling speech:', e)
+  }
+  cleanUpState()
 }
 
-// Button Listeners
+// Event Listeners
 if (typeof playBtn !== 'undefined' && playBtn) {
   playBtn.addEventListener('click', () => {
     speakTags([startingTextContainer, FI], typeof langName !== 'undefined' ? langName : 'english')
