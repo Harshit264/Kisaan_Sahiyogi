@@ -477,6 +477,7 @@ let queue = []
 let queueIndex = 0
 let keepAliveTimer = null
 let voices = []
+let activeUtterances = [] // Keep references to prevent Garbage Collection
 
 // Map your regional language names to standard BCP-47 codes
 const langMap = {
@@ -504,7 +505,7 @@ const resolveLangCode = (langName) => {
   return langMap[cleanName] || 'en-US'
 }
 
-// Finds matching regional voice engine (falls back to en-IN or default if voice isn't installed locally)
+// Finds matching regional voice engine
 const getMatchingVoice = (langCode) => {
   if (!voices.length) voices = synth.getVoices()
   if (!voices.length) return null
@@ -512,15 +513,12 @@ const getMatchingVoice = (langCode) => {
   const target = langCode.toLowerCase()
   const primary = target.split('-')[0]
 
-  // 1. Try exact match (e.g., 'ta-in')
   let voice = voices.find(v => v.lang.toLowerCase().replace('_', '-') === target)
   
-  // 2. Fallback to primary language match (e.g., any 'ta' voice)
   if (!voice) {
     voice = voices.find(v => v.lang.toLowerCase().startsWith(primary))
   }
 
-  // 3. Indian Language Safety Fallback: If OS lacks Tamil/Telugu/etc. local pack, fallback to en-IN voice so audio still speaks
   if (!voice && target.endsWith('-in')) {
     voice = voices.find(v => v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().startsWith('hi-in'))
   }
@@ -530,23 +528,53 @@ const getMatchingVoice = (langCode) => {
 
 // Helper to toggle button disabled states
 const updateButtonStates = (isPlaying) => {
-  if (playBtn) playBtn.disabled = isPlaying
-  if (stopBtn) stopBtn.disabled = !isPlaying
+  if (typeof playBtn !== 'undefined' && playBtn) playBtn.disabled = isPlaying
+  if (typeof stopBtn !== 'undefined' && stopBtn) stopBtn.disabled = !isPlaying
 }
 
-// Fixes Chrome 15-second cutoff glitch
+// Keep-alive timer for Chrome's 15-second timeout bug
 const startKeepAlive = () => {
-  clearInterval(keepAliveTimer)
+  stopKeepAlive()
   keepAliveTimer = setInterval(() => {
     if (synth.speaking && !synth.paused) {
       synth.pause()
       synth.resume()
     }
-  }, 10000)
+  }, 8000) // Call every 8 seconds to stay safely under the 15s limit
 }
 
 const stopKeepAlive = () => {
-  clearInterval(keepAliveTimer)
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer)
+    keepAliveTimer = null
+  }
+}
+
+// Helper to split text into small sentences/chunks (crucial for staying < 15 seconds per utterance)
+const chunkText = (text) => {
+  if (!text) return []
+  // Split on sentence-ending punctuation (period, exclamation, question mark, newline, danda)
+  const sentences = text.match(/[^.!?\n\u0964]+[.!?\n\u0964]?/g) || [text]
+  
+  const chunks = []
+  for (let sentence of sentences) {
+    let cleanStr = sentence.trim()
+    if (cleanStr.length > 0) {
+      // If a single sentence is abnormally long (> 150 chars), split by commas or spaces
+      while (cleanStr.length > 150) {
+        let splitIndex = cleanStr.lastIndexOf(',', 150)
+        if (splitIndex === -1) splitIndex = cleanStr.lastIndexOf(' ', 150)
+        if (splitIndex === -1) splitIndex = 150
+        
+        chunks.push(cleanStr.substring(0, splitIndex).trim())
+        cleanStr = cleanStr.substring(splitIndex).trim()
+      }
+      if (cleanStr.length > 0) {
+        chunks.push(cleanStr)
+      }
+    }
+  }
+  return chunks
 }
 
 // Checks if element is currently inside browser window
@@ -580,25 +608,31 @@ const speakTags = (tags, inputLang = 'english') => {
 
   const targetLangCode = resolveLangCode(inputLang)
 
-  queue = elements
+  // Build queue with chunked text
+  queue = []
+  elements
     .filter(el => el && isElementInViewport(el))
-    .map(el => ({
-      text: el.innerText.trim(),
-      lang: targetLangCode
-    }))
-    .filter(item => item.text.length > 0)
+    .forEach(el => {
+      const textChunks = chunkText(el.innerText)
+      textChunks.forEach(chunk => {
+        queue.push({
+          text: chunk,
+          lang: targetLangCode
+        })
+      })
+    })
 
   if (queue.length === 0) return
 
   queueIndex = 0
+  updateButtonStates(true)
   speakNextChunk()
 }
 
 // Direct, fast chunk speaker
 const speakNextChunk = () => {
   if (queueIndex >= queue.length) {
-    stopKeepAlive()
-    updateButtonStates(false)
+    stopTTS()
     return
   }
 
@@ -612,23 +646,27 @@ const speakNextChunk = () => {
     currentUtterance.voice = matchingVoice
   }
 
+  // Retain instance to prevent Chrome Garbage Collection mid-speech
+  activeUtterances.push(currentUtterance)
+
   currentUtterance.onstart = () => {
     startKeepAlive()
   }
 
   currentUtterance.onend = () => {
+    // Remove completed utterance from memory pool
+    activeUtterances = activeUtterances.filter(u => u !== currentUtterance)
     queueIndex++
     if (queueIndex < queue.length) {
       speakNextChunk()
     } else {
-      stopKeepAlive()
-      updateButtonStates(false)
+      stopTTS()
     }
   }
 
-  currentUtterance.onerror = () => {
-    stopKeepAlive()
-    updateButtonStates(false)
+  currentUtterance.onerror = (e) => {
+    console.error('Speech synthesis error:', e)
+    stopTTS()
   }
 
   synth.speak(currentUtterance)
@@ -640,17 +678,21 @@ const stopTTS = () => {
   queue = []
   queueIndex = 0
   currentUtterance = null
+  activeUtterances = [] // Clear memory references
   updateButtonStates(false)
 }
 
 // Button Listeners
-playBtn.addEventListener('click', () => {
-  // Directly calls speakTags with your array: [startingTextContainer, FI]
-  speakTags([startingTextContainer, FI], langName)
-  updateButtonStates(true)
-})
+if (typeof playBtn !== 'undefined' && playBtn) {
+  playBtn.addEventListener('click', () => {
+    speakTags([startingTextContainer, FI], typeof langName !== 'undefined' ? langName : 'english')
+  })
+}
 
-stopBtn.addEventListener('click', () => {
-  stopTTS()
-})
+if (typeof stopBtn !== 'undefined' && stopBtn) {
+  stopBtn.addEventListener('click', () => {
+    stopTTS()
+  })
+}
+
 //
