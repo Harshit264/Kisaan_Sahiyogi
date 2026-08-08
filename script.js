@@ -477,8 +477,7 @@ let queue = []
 let queueIndex = 0
 let keepAliveTimer = null
 let voices = []
-let activeUtterances = [] 
-let isProcessing = false
+let activeUtterances = []
 
 // Map regional language names to standard BCP-47 codes
 const langMap = {
@@ -510,22 +509,25 @@ const resolveLangCode = (langName) => {
   return langMap[cleanName] || 'en-US'
 }
 
-// Finds matching regional voice engine
+// Robust Indic Voice Finder with Soft Fallbacks
 const getMatchingVoice = (langCode) => {
   if (!voices || !voices.length) voices = synth.getVoices()
   if (!voices || !voices.length) return null
 
   const target = langCode.toLowerCase()
-  const primary = target.split('-')[0]
+  const primary = target.split('-')[0] // 'hi', 'bn', 'ta', 'te', 'mr'
 
+  // 1. Exact match (e.g., 'hi-in')
   let voice = voices.find(v => v.lang && v.lang.toLowerCase().replace('_', '-') === target)
-  
+
+  // 2. Primary language match (e.g., any 'hi' voice)
   if (!voice) {
     voice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith(primary))
   }
 
+  // 3. Indian Regional Fallback: try Hindi or English-India if regional voice missing on device
   if (!voice && target.endsWith('-in')) {
-    voice = voices.find(v => v.lang && (v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().startsWith('hi-in')))
+    voice = voices.find(v => v.lang && (v.lang.toLowerCase().startsWith('hi-in') || v.lang.toLowerCase().startsWith('en-in')))
   }
 
   return voice || null
@@ -554,21 +556,22 @@ const stopKeepAlive = () => {
   }
 }
 
-// Text chunker optimized for mobile speech engines
+// Safe Universal Text Chunker supporting Indic script punctuation
 const chunkText = (text) => {
   if (!text || typeof text !== 'string') return []
   
-  const rawSentences = text.split(/(?<=[.!?\n\u0964])\s+/)
+  // Split on Western (. ! ?) and Indic punctuation (Purna Virama/Danda । and Double Danda ॥) or newlines
+  const rawSentences = text.split(/[\.!\?\n\u0964\u0965]+/)
   const chunks = []
 
   for (let i = 0; i < rawSentences.length; i++) {
     let cleanStr = rawSentences[i].trim()
     if (!cleanStr) continue
 
-    // Keep mobile chunks small (~120 chars) for high performance on mobile CPUs
-    while (cleanStr.length > 120) {
-      let splitIndex = cleanStr.lastIndexOf(' ', 120)
-      if (splitIndex === -1 || splitIndex < 30) splitIndex = 120
+    // Keep chunks under ~100 characters (Indic complex scripts perform best with smaller text units)
+    while (cleanStr.length > 100) {
+      let splitIndex = cleanStr.lastIndexOf(' ', 100)
+      if (splitIndex === -1 || splitIndex < 20) splitIndex = 100
 
       chunks.push(cleanStr.substring(0, splitIndex).trim())
       cleanStr = cleanStr.substring(splitIndex).trim()
@@ -594,9 +597,8 @@ const isElementInViewport = (el) => {
   return isVisibleInDOM && isInView
 }
 
-// Primary TTS execution
+// Main speak controller
 const speakTags = (tags, inputLang = 'english') => {
-  // Mobile Fix: Cancel previous speech without wiping user activation state
   try {
     synth.cancel()
   } catch(e){}
@@ -645,7 +647,7 @@ const speakTags = (tags, inputLang = 'english') => {
   speakNextChunk()
 }
 
-// Synchronous chunk speaker to maintain user-gesture stack on mobile
+// Speak queue processor
 const speakNextChunk = () => {
   if (queueIndex >= queue.length) {
     cleanUpState()
@@ -656,6 +658,7 @@ const speakNextChunk = () => {
   currentUtterance = new SpeechSynthesisUtterance(currentItem.text)
   currentUtterance.lang = currentItem.lang
 
+  // Match voice or default to OS language engine
   const matchingVoice = getMatchingVoice(currentItem.lang)
   if (matchingVoice) {
     currentUtterance.voice = matchingVoice
@@ -670,14 +673,15 @@ const speakNextChunk = () => {
   currentUtterance.onend = () => {
     activeUtterances = activeUtterances.filter(u => u !== currentUtterance)
     queueIndex++
-    
-    // Direct call for mobile compatibility
     speakNextChunk()
   }
 
+  // Gracefully jump to next chunk if single chunk fails
   currentUtterance.onerror = (e) => {
-    console.error('Mobile speech error:', e)
-    cleanUpState()
+    console.warn('Speech chunk error for language:', currentItem.lang, e)
+    activeUtterances = activeUtterances.filter(u => u !== currentUtterance)
+    queueIndex++
+    speakNextChunk()
   }
 
   try {
@@ -707,15 +711,12 @@ const stopTTS = () => {
   cleanUpState()
 }
 
-// Mobile-Optimized Click Listener
+// Event Listeners
 if (typeof playBtn !== 'undefined' && playBtn) {
   playBtn.addEventListener('click', () => {
-    // Mobile Fix 1: Unlock audio engine directly inside user touch/click turn
     if (synth.paused) {
       synth.resume()
     }
-    
-    // Mobile Fix 2: Warm up voices array on first touch
     if (!voices.length) {
       loadVoices()
     }
