@@ -49,7 +49,7 @@ let langName = "english"
 const UiText = [
     {
         title: "Kisaan Sahiyogi",
-        pi1: "Welcome to Kisaan Sahiyogi. A wesbite specifically made to cater to the needs of the farmers of India. The goal of this website is to prevent misuse or any chemical and industrial products used by farmers in everyday life, which often lead to catastrophic amounts of financial and health loss due to a lack of awareness or simply because there is no information available out in the open in simple terms for farmers to read and understand the practical implications of the products used.",
+        pi1: "Welcome to Kisaan Sahiyogi. A website specifically made to cater to the needs of the farmers of India. The goal of this website is to prevent misuse or any chemical and industrial products used by farmers in everyday life, which often lead to catastrophic amounts of financial and health loss due to a lack of awareness or simply because there is no information available out in the open in simple terms for farmers to read and understand the practical implications of the products used.",
         pi2: "Just click on the button below and take a photo of the chemical you want information about.",
         imageBtn: "Click me to take photo",
         playBtn: "▶ Play",
