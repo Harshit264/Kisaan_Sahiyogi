@@ -478,7 +478,7 @@ let queueIndex = 0
 let keepAliveTimer = null
 let voices = []
 let activeUtterances = [] 
-let isProcessing = false // Prevents recursive loop lockups
+let isProcessing = false
 
 // Map regional language names to standard BCP-47 codes
 const langMap = {
@@ -494,7 +494,8 @@ const langMap = {
 const loadVoices = () => {
   try {
     voices = synth.getVoices()
-  } catch (e) {      console.error('Error loading voices:', e)
+  } catch (e) {
+    console.error('Error loading voices:', e)
   }
 }
 loadVoices()
@@ -524,7 +525,7 @@ const getMatchingVoice = (langCode) => {
   }
 
   if (!voice && target.endsWith('-in')) {
-    voice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().startsWith('hi-in'))
+    voice = voices.find(v => v.lang && (v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().startsWith('hi-in')))
   }
 
   return voice || null
@@ -553,11 +554,10 @@ const stopKeepAlive = () => {
   }
 }
 
-// Robust, non-freezing text chunker
+// Text chunker optimized for mobile speech engines
 const chunkText = (text) => {
   if (!text || typeof text !== 'string') return []
   
-  // Safe sentence splitting
   const rawSentences = text.split(/(?<=[.!?\n\u0964])\s+/)
   const chunks = []
 
@@ -565,10 +565,10 @@ const chunkText = (text) => {
     let cleanStr = rawSentences[i].trim()
     if (!cleanStr) continue
 
-    // Break down long paragraphs safely without while-loop crashes
-    while (cleanStr.length > 150) {
-      let splitIndex = cleanStr.lastIndexOf(' ', 150)
-      if (splitIndex === -1 || splitIndex < 30) splitIndex = 150
+    // Keep mobile chunks small (~120 chars) for high performance on mobile CPUs
+    while (cleanStr.length > 120) {
+      let splitIndex = cleanStr.lastIndexOf(' ', 120)
+      if (splitIndex === -1 || splitIndex < 30) splitIndex = 120
 
       chunks.push(cleanStr.substring(0, splitIndex).trim())
       cleanStr = cleanStr.substring(splitIndex).trim()
@@ -594,8 +594,18 @@ const isElementInViewport = (el) => {
   return isVisibleInDOM && isInView
 }
 
+// Primary TTS execution
 const speakTags = (tags, inputLang = 'english') => {
-  stopTTS()
+  // Mobile Fix: Cancel previous speech without wiping user activation state
+  try {
+    synth.cancel()
+  } catch(e){}
+  
+  stopKeepAlive()
+  queue = []
+  queueIndex = 0
+  currentUtterance = null
+  activeUtterances = []
 
   let elements = []
   if (Array.isArray(tags) || tags instanceof NodeList) {
@@ -612,7 +622,6 @@ const speakTags = (tags, inputLang = 'english') => {
 
   const targetLangCode = resolveLangCode(inputLang)
 
-  queue = []
   elements
     .filter(el => el && isElementInViewport(el))
     .forEach(el => {
@@ -626,21 +635,20 @@ const speakTags = (tags, inputLang = 'english') => {
       })
     })
 
-  if (queue.length === 0) return
+  if (queue.length === 0) {
+    updateButtonStates(false)
+    return
+  }
 
   queueIndex = 0
   updateButtonStates(true)
   speakNextChunk()
 }
 
-// Asynchronous queue processor to keep UI thread smooth
+// Synchronous chunk speaker to maintain user-gesture stack on mobile
 const speakNextChunk = () => {
-  if (isProcessing) return
-  isProcessing = true
-
   if (queueIndex >= queue.length) {
     cleanUpState()
-    isProcessing = false
     return
   }
 
@@ -662,18 +670,14 @@ const speakNextChunk = () => {
   currentUtterance.onend = () => {
     activeUtterances = activeUtterances.filter(u => u !== currentUtterance)
     queueIndex++
-    isProcessing = false
     
-    // Yield to the event loop before speaking the next chunk
-    setTimeout(() => {
-      speakNextChunk()
-    }, 10)
+    // Direct call for mobile compatibility
+    speakNextChunk()
   }
 
   currentUtterance.onerror = (e) => {
-    console.error('Speech synthesis error:', e)
+    console.error('Mobile speech error:', e)
     cleanUpState()
-    isProcessing = false
   }
 
   try {
@@ -681,11 +685,9 @@ const speakNextChunk = () => {
   } catch (e) {
     console.error('synth.speak failure:', e)
     cleanUpState()
-    isProcessing = false
   }
 }
 
-// Safe cleanup function without recursive events
 const cleanUpState = () => {
   stopKeepAlive()
   queue = []
@@ -698,16 +700,26 @@ const cleanUpState = () => {
 const stopTTS = () => {
   stopKeepAlive()
   try {
-    synth.cancel() // Flushes queue
+    synth.cancel()
   } catch (e) {
     console.error('Error cancelling speech:', e)
   }
   cleanUpState()
 }
 
-// Event Listeners
+// Mobile-Optimized Click Listener
 if (typeof playBtn !== 'undefined' && playBtn) {
   playBtn.addEventListener('click', () => {
+    // Mobile Fix 1: Unlock audio engine directly inside user touch/click turn
+    if (synth.paused) {
+      synth.resume()
+    }
+    
+    // Mobile Fix 2: Warm up voices array on first touch
+    if (!voices.length) {
+      loadVoices()
+    }
+
     speakTags([startingTextContainer, FI], typeof langName !== 'undefined' ? langName : 'english')
   })
 }
