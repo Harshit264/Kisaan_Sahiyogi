@@ -19,7 +19,7 @@ const schema = {
     properties:{
         brandName: {
             type: Type.STRING,
-            description: "Brand or Manufacturer name visible on the label"
+            description: "Brand or Manufacturer name visible on the label and if nothing is visible let the user know"
         },
         productType: {
             type: Type.STRING,
@@ -27,7 +27,7 @@ const schema = {
         },
         useCase: {
             type: Type.STRING,
-            description: "Tell for what general purpose the chemical or solution shown is used in 300 words. Do not list any precautions during use or dilution requirements if any."
+            description: "Tell for what general purpose the chemical or solution shown is used in or dilution requirements if any in 300 words. Do not list any precautions during use."
         },
         precautions: {
             type: Type.ARRAY,
@@ -43,7 +43,7 @@ const schema = {
     }
 } 
 
-//We are setting a custom proxy api call whcih the browser can access while ensuring the security to be maintained
+//We are setting a custom proxy api call which the browser can access while ensuring the security to be maintained
 app.post("/api/describe", async (req, res) => { //This makes a post request to the google sdk
     const { mimeType, base64Data, langName} = req.body
     if (!mimeType || !base64Data){
@@ -59,7 +59,7 @@ app.post("/api/describe", async (req, res) => { //This makes a post request to t
                         data: base64Data
                     }
                 },
-                `The image shown is of an agricultural chemical agent like a fertilizer, insecticide, pesticide etc so please give the asked data accordingly. Make sure to keep in mind that this data is being shown to a rural farmer so explain things in simple language only giving the practical implications without diving too deep into the scientific theory while maintaining all the technical nuances which an informed farmer might actually want to know. Put keys of the json in english and put the values in ${langName}`
+                `The image shown is of an agricultural chemical agent like a fertilizer, insecticide, pesticide etc so please give the asked data accordingly. Make sure to keep in mind that this data is being shown to a rural farmer so explain things in simple language only giving the practical implications without diving too deep into the scientific theory while maintaining all the technical nuances which an informed farmer might actually want to know. Put keys of the json in english and put the values in ${langName}. If the product is not something which is agriculturally used, do not give information about the product in detail, just mention that it should not be used in that context.`
             ],
             config: {
                 temperature: 0.3,
